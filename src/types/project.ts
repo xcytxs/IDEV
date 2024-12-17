@@ -36,6 +36,39 @@ export type Language =
   | 'latex'
   | 'none';
 
+export type AgentRole = 
+  | 'orchestrator'
+  | 'researcher'
+  | 'prototyper'
+  | 'branding'
+  | 'marketing'
+  | 'localization'
+  | 'developer'
+  | 'debugger'
+  | 'tester'
+  | 'cicd'
+  | 'beta_tester'
+  | 'user_feedback'
+  | 'support'
+  | 'community'
+  | 'project_manager'
+  | 'risk_manager'
+  | 'analytics';
+
+export interface Agent {
+  id: string;
+  name: string;
+  role: AgentRole;
+  description: string;
+  permissions: {
+    read: string[];
+    write: string[];
+    admin: string[];
+  };
+  capabilities: string[];
+  status: 'active' | 'inactive';
+}
+
 export interface ProjectFile {
   id: string;
   name: string;
@@ -136,16 +169,40 @@ export interface Project {
 }
 
 export interface ProjectTemplate {
+  id: string;
+  name: string;
+  description: string;
   type: ProjectType;
-  category: ProjectCategory;
-  framework: Framework;
-  language: Language;
+  framework?: string;
+  language?: string;
+  agents: {
+    required: Agent[];
+    optional: Agent[];
+  };
+  workflowTemplates: WorkflowTemplate[];
   files: ProjectFile[];
-  assets: ProjectAssets;
-  requiredAgents: {
-    type: string;
-    role: string;
+  settings: {
+    buildCommand?: string;
+    startCommand?: string;
+    testCommand?: string;
+    environmentVariables: Record<string, string>;
+    customSettings?: Record<string, any>;
+  };
+}
+
+export interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  steps: {
+    id: string;
+    name: string;
     description: string;
+    requiredRole: AgentRole;
+    dependencies: string[];
+    artifacts: {
+      input: string[];
+      output: string[];
+    };
   }[];
-  settings: Partial<Project['settings']>;
 }

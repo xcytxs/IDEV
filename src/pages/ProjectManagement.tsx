@@ -7,6 +7,7 @@ import ProjectWorkspaceManager from '../components/projects/ProjectWorkspaceMana
 import TeamManagement from '../components/team/TeamManagement';
 import { createProjectFromTemplate } from '../templates/projectTemplates';
 import { orchestratorService } from '../services/orchestratorService';
+import { ProjectManager } from '../services/projectManager'; // Import ProjectManager
 import ErrorDisplay from '../components/ErrorDisplay';
 
 const ProjectManagement: React.FC = () => {
@@ -14,6 +15,7 @@ const ProjectManagement: React.FC = () => {
     currentProject,
     setCurrentProject,
     isLoading,
+    setIsLoading, // Add setIsLoading
     error,
     setError
   } = useProjectStore();
@@ -23,17 +25,38 @@ const ProjectManagement: React.FC = () => {
 
   const handleCreateProject = async (formData: Partial<Project>) => {
     try {
+      setIsLoading(true);
+      
+      // Create project from template
       const newProject = createProjectFromTemplate(
         formData.name || 'New Project',
         formData.description || '',
         formData.type || 'code'
       );
 
-      await orchestratorService.initializeProject(newProject as Project);
-      setCurrentProject(newProject as Project);
-      setEditingProject(null);
+      // Validate project data
+      if (!newProject.id || !newProject.name) {
+        throw new Error('Invalid project data');
+      }
+
+      // Save project first
+      await ProjectManager.saveProject(newProject);
+
+      // Initialize project workspace and files
+      try {
+        await orchestratorService.initializeProject(newProject);
+        setCurrentProject(newProject);
+        setEditingProject(null);
+      } catch (initError) {
+        // If initialization fails, delete the project
+        await ProjectManager.deleteProject(newProject.id);
+        throw initError;
+      }
     } catch (err) {
+      console.error('Project creation failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to create project');
+    } finally {
+      setIsLoading(false);
     }
   };
 

@@ -117,17 +117,46 @@ export class ProjectManager {
     return `${this.WORKSPACE_ROOT}/${projectId}${filePath}`;
   }
 
-  private static async saveProject(project: Project): Promise<void> {
-    const projects = await loadFromLocalStorage<Project[]>(this.STORAGE_KEY, []);
-    const index = projects.findIndex(p => p.id === project.id);
-    
-    if (index !== -1) {
-      projects[index] = project;
-    } else {
-      projects.push(project);
-    }
+  static async saveProject(project: Project): Promise<void> {
+    try {
+      // Load existing projects
+      const projects = await loadFromLocalStorage<Project[]>(this.STORAGE_KEY, []);
+      const index = projects.findIndex(p => p.id === project.id);
+      
+      // Update or add project
+      if (index !== -1) {
+        projects[index] = { ...projects[index], ...project };
+      } else {
+        projects.push(project);
+      }
 
-    await saveToLocalStorage(this.STORAGE_KEY, projects);
+      // Save to localStorage
+      await saveToLocalStorage(this.STORAGE_KEY, projects);
+      
+      // Create workspace directory if it doesn't exist
+      const workspacePath = `${this.WORKSPACE_ROOT}/${project.id}`;
+      const exists = await WebContainerManager.fileExists(workspacePath);
+      if (!exists) {
+        await WebContainerManager.createWorkspace(workspacePath);
+      }
+    } catch (error) {
+      console.error('Failed to save project:', error);
+      throw new Error('Failed to save project');
+    }
+  }
+
+  static async deleteProject(projectId: string): Promise<void> {
+    try {
+      // Remove from localStorage
+      const projects = await loadFromLocalStorage<Project[]>(this.STORAGE_KEY, []);
+      const filteredProjects = projects.filter(p => p.id !== projectId);
+      await saveToLocalStorage(this.STORAGE_KEY, filteredProjects);
+      
+      // TODO: Add cleanup of WebContainer workspace when API supports it
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      throw new Error('Failed to delete project');
+    }
   }
 
   private static async getProject(projectId: string): Promise<Project | null> {

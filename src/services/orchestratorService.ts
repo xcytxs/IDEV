@@ -1,5 +1,4 @@
-import { OrchestratorAgent, ProjectContext, Decision } from '../types/orchestrator';
-import { Project } from '../types/project';
+import { OrchestratorAgent, ProjectTemplate, Decision } from '../types/orchestrator';
 import { Agent } from '../types/agent';
 import { KnowledgeService } from './knowledgeService';
 import { WebContainerManager } from '../utils/webContainer';
@@ -63,46 +62,110 @@ class OrchestratorService {
     return this.instance;
   }
 
-  async initializeProject(project: Project): Promise<ProjectContext> {
+  async initializeProject(project: ProjectTemplate): Promise<void> {
     try {
-      // Create workspace directory
-      const workspacePath = `/workspace/${project.id}`;
-      await WebContainerManager.createWorkspace(workspacePath);
-
-      // Initialize project context
-      const context: ProjectContext = {
-        id: `ctx-${Date.now()}`,
-        projectId: project.id,
-        chatHistory: [],
-        decisions: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      // Initialize project files
-      for (const file of project.files) {
-        await WebContainerManager.writeFile(`${workspacePath}/${file.path}`, file.content);
-      }
-
-      // Store project context
-      if (!this.orchestrator.context.activeProjects.includes(project.id)) {
-        this.orchestrator.context.activeProjects.push(project.id);
-      }
+      // Initialize project workspace
+      await this.createProjectStructure(project);
       
-      this.orchestrator.context.projectContexts[project.id] = context;
-      await this.save();
-
-      // Initialize knowledge base
-      await this.initializeProjectKnowledge(project);
-
-      return context;
+      // Initialize required agents
+      await this.initializeAgents(project.agents.required);
+      
+      // Set up initial workflows
+      await this.initializeWorkflows(project.workflowTemplates);
+      
+      // Create initial files
+      await this.initializeFiles(project.files);
+      
+      // Configure project settings
+      await this.configureProjectSettings(project.settings);
+      
     } catch (error) {
       console.error('Failed to initialize project:', error);
-      throw error;
+      throw new Error('Project initialization failed');
     }
   }
 
-  async suggestAgents(project: Project): Promise<Agent[]> {
+  private async createProjectStructure(project: ProjectTemplate): Promise<void> {
+    const directories = [
+      'src',
+      'tests',
+      'docs',
+      'research',
+      'assets',
+      'workflows'
+    ];
+
+    for (const dir of directories) {
+      await WebContainerManager.createDirectory(`/workspace/${project.name}/${dir}`);
+    }
+  }
+
+  private async initializeAgents(agents: Agent[]): Promise<void> {
+    for (const agent of agents) {
+      await this.initializeAgent(agent);
+    }
+  }
+
+  private async initializeAgent(agent: Agent): Promise<void> {
+    // Create agent workspace
+    await WebContainerManager.createDirectory(`/workspace/agents/${agent.id}`);
+    
+    // Initialize agent configuration
+    await WebContainerManager.writeFile(
+      `/workspace/agents/${agent.id}/config.json`,
+      JSON.stringify({
+        role: agent.role,
+        permissions: agent.permissions,
+        capabilities: agent.capabilities
+      }, null, 2)
+    );
+  }
+
+  private async initializeWorkflows(workflows: any[]): Promise<void> {
+    for (const workflow of workflows) {
+      await this.initializeWorkflow(workflow);
+    }
+  }
+
+  private async initializeWorkflow(workflow: any): Promise<void> {
+    // Create workflow configuration
+    await WebContainerManager.writeFile(
+      `/workspace/workflows/${workflow.id}.json`,
+      JSON.stringify(workflow, null, 2)
+    );
+  }
+
+  private async initializeFiles(files: ProjectTemplate['files']): Promise<void> {
+    for (const file of files) {
+      await WebContainerManager.writeFile(
+        `/workspace/${file.path}`,
+        file.content
+      );
+    }
+  }
+
+  private async configureProjectSettings(settings: ProjectTemplate['settings']): Promise<void> {
+    // Create environment variables file
+    await WebContainerManager.writeFile(
+      '/workspace/.env',
+      Object.entries(settings.environmentVariables)
+        .map(([key, value]) => `${key}=${value}`)
+        .join('\n')
+    );
+
+    // Create project configuration
+    await WebContainerManager.writeFile(
+      '/workspace/project.json',
+      JSON.stringify({
+        buildCommand: settings.buildCommand,
+        startCommand: settings.startCommand,
+        testCommand: settings.testCommand,
+        customSettings: settings.customSettings
+      }, null, 2)
+    );
+  }
+
+  async suggestAgents(project: ProjectTemplate): Promise<Agent[]> {
     // Get appropriate team template based on project type
     const templateId = project.type === 'game' ? 'gameDevelopment' : 'webDevelopment';
     const template = teamTemplates[templateId];
@@ -118,7 +181,7 @@ class OrchestratorService {
     }));
   }
 
-  private async initializeProjectKnowledge(project: Project): Promise<void> {
+  private async initializeProjectKnowledge(project: ProjectTemplate): Promise<void> {
     await db.addContext({
       projectId: project.id,
       type: 'architecture',
@@ -132,7 +195,7 @@ class OrchestratorService {
     });
   }
 
-  private async analyzeProjectStructure(project: Project) {
+  private async analyzeProjectStructure(project: ProjectTemplate) {
     const structure: Record<string, string[]> = {};
     
     for (const file of project.files) {
